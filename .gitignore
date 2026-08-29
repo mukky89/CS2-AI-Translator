@@ -1,0 +1,9 @@
+bin/
+obj/
+.vs/
+*.user
+*.suo
+models/*.bin
+models/*.ggml
+models/*.gguf
+logs/

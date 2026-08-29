@@ -1,0 +1,30 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CS2AITranslator.Core", "src\CS2AITranslator.Core\CS2AITranslator.Core.csproj", "{D87E7220-43DB-48F6-8C09-53DD3782E735}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CS2AITranslator.Infrastructure", "src\CS2AITranslator.Infrastructure\CS2AITranslator.Infrastructure.csproj", "{E4D1D93D-2512-49A0-A36F-A685A32D00C4}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CS2AITranslator.App", "src\CS2AITranslator.App\CS2AITranslator.App.csproj", "{39D788DB-E09C-418E-8AB6-3017A46FAF79}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{D87E7220-43DB-48F6-8C09-53DD3782E735}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D87E7220-43DB-48F6-8C09-53DD3782E735}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D87E7220-43DB-48F6-8C09-53DD3782E735}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D87E7220-43DB-48F6-8C09-53DD3782E735}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E4D1D93D-2512-49A0-A36F-A685A32D00C4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E4D1D93D-2512-49A0-A36F-A685A32D00C4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E4D1D93D-2512-49A0-A36F-A685A32D00C4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E4D1D93D-2512-49A0-A36F-A685A32D00C4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{39D788DB-E09C-418E-8AB6-3017A46FAF79}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{39D788DB-E09C-418E-8AB6-3017A46FAF79}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{39D788DB-E09C-418E-8AB6-3017A46FAF79}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{39D788DB-E09C-418E-8AB6-3017A46FAF79}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
