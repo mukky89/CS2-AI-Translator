@@ -68,7 +68,7 @@ public sealed class SileroSpeechActivityDetector : ISpeechActivityDetector, IDis
         using var converted = new MemoryStream();
         var buffer = new byte[32 * 1024];
         int read;
-        while ((read = resampler.Read(buffer, 0, buffer.Length)) > 0)
+        while ((read = resampler.Read(buffer)) > 0)
             converted.Write(buffer, 0, read);
 
         var bytes = converted.ToArray();
