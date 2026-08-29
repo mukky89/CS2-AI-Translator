@@ -13,6 +13,7 @@ public partial class MainWindow : Window
     private readonly SemaphoreSlim _pipelineGate = new(1, 1);
     private IAudioCaptureService? _capture;
     private WhisperSpeechToTextService? _speech;
+    private SileroSpeechActivityDetector? _vad;
     private ITranslationService _translation;
     private OverlayWindow? _overlay;
     private bool _running;
@@ -46,15 +47,19 @@ public partial class MainWindow : Window
 
             _targetLanguage = ((ComboBoxItem)TargetLanguageBox.SelectedItem).Tag?.ToString() ?? "sk";
             var modelType = ParseModelType(((ComboBoxItem)ModelTypeBox.SelectedItem).Tag?.ToString());
-            StatusText.Text = "Preparing local Whisper model…";
+            StatusText.Text = "Preparing local Whisper + Silero models…";
             ModelStatusText.Text = "checking…";
 
             var progress = new Progress<double>(value =>
                 ModelStatusText.Text = value >= 1 ? "ready" : $"downloading {value:P0}");
             var modelPath = await _modelManager.EnsureModelAsync(modelType, progress);
+            var vadModelPath = await _modelManager.EnsureSileroVadModelAsync(progress);
+
             _speech?.Dispose();
+            _vad?.Dispose();
             _speech = new WhisperSpeechToTextService(modelPath);
-            ModelStatusText.Text = "ready";
+            _vad = new SileroSpeechActivityDetector(vadModelPath);
+            ModelStatusText.Text = "Whisper + Silero ready";
 
             var captureMode = ((ComboBoxItem)CaptureModeBox.SelectedItem).Tag?.ToString() ?? "cs2";
             _capture = captureMode == "system"
@@ -66,8 +71,8 @@ public partial class MainWindow : Window
             {
                 await _capture.StartAsync();
                 StatusText.Text = captureMode == "cs2"
-                    ? "Listening to CS2 audio only…"
-                    : "Listening to Windows output audio…";
+                    ? "Listening to CS2 audio only · Silero VAD active…"
+                    : "Listening to Windows output audio · Silero VAD active…";
             }
             catch when (captureMode == "cs2")
             {
@@ -75,7 +80,7 @@ public partial class MainWindow : Window
                 _capture = new WasapiLoopbackCaptureService(TimeSpan.FromSeconds(1.5));
                 _capture.ChunkReady += ProcessChunkAsync;
                 await _capture.StartAsync();
-                StatusText.Text = "CS2 process capture unavailable — using Windows output fallback.";
+                StatusText.Text = "CS2 process capture unavailable — Windows output fallback · Silero VAD active.";
             }
 
             _running = true;
@@ -107,10 +112,13 @@ public partial class MainWindow : Window
 
     private async Task ProcessChunkAsync(AudioChunk chunk)
     {
-        if (_speech is null || !await _pipelineGate.WaitAsync(0)) return;
+        if (_speech is null || _vad is null || !await _pipelineGate.WaitAsync(0)) return;
         try
         {
             var total = Stopwatch.StartNew();
+            var activity = await _vad.DetectAsync(chunk);
+            if (!activity.HasSpeech) return;
+
             var speech = await _speech.TranscribeAsync(chunk);
             if (string.IsNullOrWhiteSpace(speech.Text)) return;
 
@@ -121,7 +129,7 @@ public partial class MainWindow : Window
             {
                 OriginalText.Text = $"[{translated.SourceLanguage}] {speech.Text}";
                 TranslatedText.Text = translated.TranslatedText;
-                LatencyText.Text = $"STT {speech.ProcessingTime.TotalMilliseconds:0} ms · translation {translated.ProcessingTime.TotalMilliseconds:0} ms · total {total.Elapsed.TotalMilliseconds:0} ms";
+                LatencyText.Text = $"VAD {activity.ProcessingTime.TotalMilliseconds:0} ms · STT {speech.ProcessingTime.TotalMilliseconds:0} ms · translation {translated.ProcessingTime.TotalMilliseconds:0} ms · total {total.Elapsed.TotalMilliseconds:0} ms";
                 _overlay?.SetTranslation(translated.SourceLanguage, speech.Text, translated.TranslatedText, total.Elapsed);
             });
         }
@@ -159,6 +167,7 @@ public partial class MainWindow : Window
     protected override async void OnClosed(EventArgs e)
     {
         await StopTranslatorAsync();
+        _vad?.Dispose();
         _speech?.Dispose();
         if (_translation is IDisposable disposableTranslation) disposableTranslation.Dispose();
         _pipelineGate.Dispose();
