@@ -17,20 +17,22 @@ See [`docs/COMPETITIVE_ANALYSIS.md`](docs/COMPETITIVE_ANALYSIS.md) for the 2026 
 ## Current branch / MVP foundation
 
 - .NET 10 + WPF
-- NAudio 3 process-specific WASAPI capture for `cs2.exe` on Windows 10 build 19041+
+- Windows 10 build 19041 minimum, Windows 11 recommended
+- NAudio 3 process-specific WASAPI capture for `cs2.exe`
 - automatic fallback to normal Windows loopback capture
 - 16 kHz / 16-bit / mono process capture
 - short ~1.2 s CS2 chunks
+- local **Silero VAD** before speech recognition
 - local Whisper.net speech-to-text
 - Whisper model stays loaded in memory between chunks
-- automatic Whisper model download on first start
-- model choices: Tiny / Base / Small
+- automatic Whisper + Silero model download on first start
+- Whisper choices: Tiny / Base / Small
 - pluggable translation interface
 - DeepL translation provider via `DEEPL_API_KEY`
 - transcription/CS2-normalization fallback when no translation API is configured
-- CS2 terminology normalization
+- CS2 terminology protection across translation (AWP, Banana, Connector, Pit, etc.)
 - always-on-top overlay
-- latency display for STT / translation / total pipeline
+- latency display for VAD / STT / translation / total pipeline
 - low-latency backlog protection: stale chunks are dropped instead of queued
 - Windows GitHub Actions build workflow
 
@@ -50,7 +52,7 @@ See [`docs/COMPETITIVE_ANALYSIS.md`](docs/COMPETITIVE_ANALYSIS.md) for the 2026 
 5. Start `CS2AITranslator.App`.
 6. Choose target language and Whisper model.
 7. Press **Start translator**.
-8. The selected Whisper model is downloaded automatically to `%LOCALAPPDATA%\CS2AITranslator\models` on first use.
+8. The selected Whisper model and Silero VAD model are downloaded automatically to `%LOCALAPPDATA%\CS2AITranslator\models` on first use.
 
 If process-specific capture cannot be activated, the app automatically falls back to Windows output loopback.
 
@@ -71,7 +73,7 @@ No API key is stored in the repository.
 ## Architecture
 
 - `CS2AITranslator.Core` — contracts, result models and CS2 glossary
-- `CS2AITranslator.Infrastructure` — WASAPI capture, CS2 process capture, model management, Whisper STT and translation providers
+- `CS2AITranslator.Infrastructure` — WASAPI capture, CS2 process capture, model management, Silero VAD, Whisper STT and translation providers
 - `CS2AITranslator.App` — WPF control window and overlay
 
 Pipeline:
@@ -79,10 +81,13 @@ Pipeline:
 ```text
 cs2.exe audio
     -> per-process WASAPI loopback
-    -> 16 kHz mono speech segments
+    -> 16 kHz mono audio
+    -> local Silero VAD
+       -> ignore silence/non-speech
+       -> speech only
     -> local Whisper STT
-    -> translation provider + CS2 terminology normalization
-    -> click-through/always-on-top subtitle overlay
+    -> translation provider with protected CS2 terminology
+    -> always-on-top subtitle overlay
 ```
 
 ## Safety boundary
@@ -99,7 +104,7 @@ The project is intentionally external to CS2. It does **not**:
 
 ### MVP 1.1 — production-quality incoming comms
 
-- Silero VAD integration and adaptive speech segmentation
+- adaptive frame-based VAD segmentation with pre-roll/hangover (current VAD already gates fixed chunks)
 - audio device selector + live level meter/test
 - first-run setup wizard
 - OpenAI-compatible/local NMT translation provider
