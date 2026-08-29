@@ -28,9 +28,10 @@ public sealed class DeepLTranslationService : ITranslationService, IDisposable
             return new TranslationResult(text, text, sourceLanguage, targetLanguage, TimeSpan.Zero);
 
         var sw = Stopwatch.StartNew();
+        var protectedText = Cs2Glossary.ProtectForTranslation(text);
         var form = new Dictionary<string, string>
         {
-            ["text"] = Cs2Glossary.Normalize(text),
+            ["text"] = protectedText.Text,
             ["target_lang"] = ToDeepLLanguage(targetLanguage)
         };
 
@@ -48,8 +49,9 @@ public sealed class DeepLTranslationService : ITranslationService, IDisposable
             ? detectedEl.GetString() ?? sourceLanguage
             : sourceLanguage;
 
+        translated = Cs2Glossary.RestoreAfterTranslation(translated, protectedText);
         sw.Stop();
-        return new TranslationResult(text, Cs2Glossary.Normalize(translated), detected.ToLowerInvariant(), targetLanguage, sw.Elapsed);
+        return new TranslationResult(text, translated, detected.ToLowerInvariant(), targetLanguage, sw.Elapsed);
     }
 
     private static string ToDeepLLanguage(string language) => language.Trim().ToLowerInvariant() switch
