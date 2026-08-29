@@ -55,23 +55,23 @@ public sealed class WhisperSpeechToTextService : ISpeechToTextService, IDisposab
             ? WaveFormat.CreateIeeeFloatWaveFormat(chunk.SampleRate, chunk.Channels)
             : new WaveFormat(chunk.SampleRate, chunk.BitsPerSample, chunk.Channels);
 
-        var output = new MemoryStream();
         using var raw = new RawSourceWaveStream(new MemoryStream(chunk.Data, writable: false), sourceFormat);
+        using var output = new MemoryStream();
 
         if (chunk.SampleRate == 16000 && chunk.BitsPerSample == 16 && chunk.Channels == 1 && !chunk.IsIeeeFloat)
         {
-            using var writer = new WaveFileWriter(new IgnoreDisposeStream(output), sourceFormat);
-            raw.CopyTo(writer);
-            writer.Flush();
+            using (var writer = new WaveFileWriter(output, sourceFormat))
+            {
+                raw.CopyTo(writer);
+            }
         }
         else
         {
             using var resampler = new MediaFoundationResampler(raw, new WaveFormat(16000, 16, 1)) { ResamplerQuality = 60 };
-            WaveFileWriter.WriteWavFileToStream(new IgnoreDisposeStream(output), resampler);
+            WaveFileWriter.WriteWavFileToStream(output, resampler);
         }
 
-        output.Position = 0;
-        return output;
+        return new MemoryStream(output.ToArray(), writable: false);
     }
 
     public void Dispose()
