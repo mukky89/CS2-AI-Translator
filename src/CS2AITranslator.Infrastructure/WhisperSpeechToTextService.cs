@@ -1,44 +1,40 @@
 using System.Diagnostics;
+using System.Text;
 using CS2AITranslator.Core;
 using NAudio.Wave;
 using Whisper.net;
 
 namespace CS2AITranslator.Infrastructure;
 
-public sealed class WhisperSpeechToTextService : ISpeechToTextService
+public sealed class WhisperSpeechToTextService : ISpeechToTextService, IDisposable
 {
-    private readonly string _modelPath;
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly WhisperFactory _factory;
+    private readonly WhisperProcessor _processor;
+    private bool _disposed;
 
-    public WhisperSpeechToTextService(string modelPath) => _modelPath = modelPath;
+    public WhisperSpeechToTextService(string modelPath)
+    {
+        if (!File.Exists(modelPath))
+            throw new FileNotFoundException("Whisper model was not found.", modelPath);
+
+        _factory = WhisperFactory.FromPath(modelPath);
+        _processor = _factory.CreateBuilder()
+            .WithLanguage("auto")
+            .Build();
+    }
 
     public async Task<SpeechResult> TranscribeAsync(AudioChunk chunk, CancellationToken cancellationToken = default)
     {
-        if (!File.Exists(_modelPath))
-            throw new FileNotFoundException("Whisper model was not found. Put a ggml model in the models folder.", _modelPath);
-
+        ObjectDisposedException.ThrowIf(_disposed, this);
         await _gate.WaitAsync(cancellationToken);
         var sw = Stopwatch.StartNew();
-        var tempWav = Path.Combine(Path.GetTempPath(), $"cs2ai-{Guid.NewGuid():N}.wav");
 
         try
         {
-            var sourceFormat = chunk.IsIeeeFloat
-                ? WaveFormat.CreateIeeeFloatWaveFormat(chunk.SampleRate, chunk.Channels)
-                : new WaveFormat(chunk.SampleRate, chunk.BitsPerSample, chunk.Channels);
-
-            using (var raw = new RawSourceWaveStream(new MemoryStream(chunk.Data, writable: false), sourceFormat))
-            using (var resampler = new MediaFoundationResampler(raw, new WaveFormat(16000, 16, 1)) { ResamplerQuality = 60 })
-            {
-                WaveFileWriter.CreateWaveFile(tempWav, resampler);
-            }
-
-            using var factory = WhisperFactory.FromPath(_modelPath);
-            using var processor = factory.CreateBuilder().WithLanguage("auto").Build();
-            await using var audio = File.OpenRead(tempWav);
-
-            var text = new System.Text.StringBuilder();
-            await foreach (var segment in processor.ProcessAsync(audio, cancellationToken))
+            await using var wav = BuildWhisperWav(chunk);
+            var text = new StringBuilder();
+            await foreach (var segment in _processor.ProcessAsync(wav, cancellationToken))
             {
                 if (!string.IsNullOrWhiteSpace(segment.Text))
                     text.Append(segment.Text.Trim()).Append(' ');
@@ -49,8 +45,41 @@ public sealed class WhisperSpeechToTextService : ISpeechToTextService
         }
         finally
         {
-            if (File.Exists(tempWav)) File.Delete(tempWav);
             _gate.Release();
         }
+    }
+
+    private static MemoryStream BuildWhisperWav(AudioChunk chunk)
+    {
+        var sourceFormat = chunk.IsIeeeFloat
+            ? WaveFormat.CreateIeeeFloatWaveFormat(chunk.SampleRate, chunk.Channels)
+            : new WaveFormat(chunk.SampleRate, chunk.BitsPerSample, chunk.Channels);
+
+        var output = new MemoryStream();
+        using var raw = new RawSourceWaveStream(new MemoryStream(chunk.Data, writable: false), sourceFormat);
+
+        if (chunk.SampleRate == 16000 && chunk.BitsPerSample == 16 && chunk.Channels == 1 && !chunk.IsIeeeFloat)
+        {
+            using var writer = new WaveFileWriter(new IgnoreDisposeStream(output), sourceFormat);
+            raw.CopyTo(writer);
+            writer.Flush();
+        }
+        else
+        {
+            using var resampler = new MediaFoundationResampler(raw, new WaveFormat(16000, 16, 1)) { ResamplerQuality = 60 };
+            WaveFileWriter.WriteWavFileToStream(new IgnoreDisposeStream(output), resampler);
+        }
+
+        output.Position = 0;
+        return output;
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        _processor.Dispose();
+        _factory.Dispose();
+        _gate.Dispose();
     }
 }
