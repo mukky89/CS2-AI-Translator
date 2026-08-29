@@ -1,4 +1,5 @@
 using CS2AITranslator.Core;
+using NAudio.CoreAudioApi;
 using NAudio.Wave;
 
 namespace CS2AITranslator.Infrastructure;
@@ -7,42 +8,45 @@ public sealed class WasapiLoopbackCaptureService : IAudioCaptureService
 {
     private readonly TimeSpan _chunkDuration;
     private readonly object _gate = new();
-    private WasapiLoopbackCapture? _capture;
+    private WasapiRecorder? _recorder;
     private MemoryStream _buffer = new();
 
     public WasapiLoopbackCaptureService(TimeSpan? chunkDuration = null)
-        => _chunkDuration = chunkDuration ?? TimeSpan.FromSeconds(3);
+        => _chunkDuration = chunkDuration ?? TimeSpan.FromSeconds(1.5);
 
     public event Func<AudioChunk, Task>? ChunkReady;
-    public bool IsRunning => _capture is not null;
+    public bool IsRunning => _recorder is not null;
 
     public Task StartAsync(CancellationToken cancellationToken = default)
     {
-        if (_capture is not null) return Task.CompletedTask;
+        if (_recorder is not null) return Task.CompletedTask;
 
-        _capture = new WasapiLoopbackCapture();
-        _capture.DataAvailable += OnDataAvailable;
-        _capture.RecordingStopped += OnRecordingStopped;
-        _capture.StartRecording();
+        _recorder = new WasapiRecorderBuilder()
+            .WithLoopbackCapture()
+            .WithBufferLength(40)
+            .Build();
+        _recorder.DataAvailable += OnDataAvailable;
+        _recorder.RecordingStopped += OnRecordingStopped;
+        _recorder.StartRecording();
         return Task.CompletedTask;
     }
 
     public Task StopAsync(CancellationToken cancellationToken = default)
     {
-        _capture?.StopRecording();
+        _recorder?.StopRecording();
         return Task.CompletedTask;
     }
 
-    private void OnDataAvailable(object? sender, WaveInEventArgs e)
+    private void OnDataAvailable(ReadOnlySpan<byte> buffer, AudioClientBufferFlags flags, long devicePosition, long qpcPosition)
     {
-        var capture = _capture;
-        if (capture is null || e.BytesRecorded == 0) return;
+        var recorder = _recorder;
+        if (recorder is null || buffer.IsEmpty || (flags & AudioClientBufferFlags.Silent) != 0) return;
 
         byte[]? completed = null;
         lock (_gate)
         {
-            _buffer.Write(e.Buffer, 0, e.BytesRecorded);
-            var targetBytes = capture.WaveFormat.AverageBytesPerSecond * _chunkDuration.TotalSeconds;
+            _buffer.Write(buffer);
+            var targetBytes = recorder.WaveFormat.AverageBytesPerSecond * _chunkDuration.TotalSeconds;
             if (_buffer.Length >= targetBytes)
             {
                 completed = _buffer.ToArray();
@@ -53,7 +57,7 @@ public sealed class WasapiLoopbackCaptureService : IAudioCaptureService
 
         if (completed is null) return;
 
-        var format = capture.WaveFormat;
+        var format = recorder.WaveFormat;
         var chunk = new AudioChunk(
             completed,
             format.SampleRate,
@@ -68,11 +72,12 @@ public sealed class WasapiLoopbackCaptureService : IAudioCaptureService
 
     private void OnRecordingStopped(object? sender, StoppedEventArgs e)
     {
-        if (_capture is null) return;
-        _capture.DataAvailable -= OnDataAvailable;
-        _capture.RecordingStopped -= OnRecordingStopped;
-        _capture.Dispose();
-        _capture = null;
+        var recorder = _recorder;
+        if (recorder is null) return;
+        recorder.DataAvailable -= OnDataAvailable;
+        recorder.RecordingStopped -= OnRecordingStopped;
+        recorder.Dispose();
+        _recorder = null;
     }
 
     public async ValueTask DisposeAsync()
